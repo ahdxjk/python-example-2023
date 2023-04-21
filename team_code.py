@@ -72,18 +72,19 @@ def train_challenge_model(data_folder, model_folder, verbose):
         print('Training the Challenge models on the Challenge data...')
 
     # Define parameters for random forest classifier and regressor.
-    n_estimators   = 800  # Number of trees in the forest.
-    max_leaf_nodes = 500  # Maximum number of leaf nodes in each tree.
-    random_state   = 600  # Random state; set for reproducibility.
+    n_estimators   = 300# Number of trees in the forest.
+    max_leaf_nodes = 400 # Maximum number of leaf nodes in each tree.
+    random_state   = 800  # Random state; set for reproducibility.
 
     # Impute any missing features; use the mean value by default.
-    imputer = SimpleImputer().fit(features)
-
+    #缺失值填充，使用了平均值来填充
+    knn_imputer = KNNImputer(n_neighbors=20, weights="uniform")
+    imputer =  KNNImputer().fit(features)
     # Train the models.
-    features = imputer.transform(features)
+    features = imputer.fit_transform(features)
     outcome_model = RandomForestClassifier(
         n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes.ravel())
-    cpc_model = RandomForestRegressor(
+    cpc_model = RandomForestClassifier(
         n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs.ravel())
 
     # Save the models.
