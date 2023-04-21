@@ -9,12 +9,24 @@
 #
 ################################################################################
 
+#!/usr/bin/env python
+
+# Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
+# change or remove non-required functions, and add your own functions.
+
+################################################################################
+#
+# Optional libraries and functions. You can change or remove them.
+#
+################################################################################
+from sklearn.impute import KNNImputer
 from helper_code import *
 import numpy as np, os, sys
 import mne
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
+
 
 ################################################################################
 #
@@ -28,20 +40,20 @@ def train_challenge_model(data_folder, model_folder, verbose):
     if verbose >= 1:
         print('Finding the Challenge data...')
 
-    patient_ids = find_data_folders(data_folder)
-    num_patients = len(patient_ids)
+    patient_ids = find_data_folders(data_folder)#病人id，应该是列表存储
+    num_patients = len(patient_ids)#这里的
 
     if num_patients==0:
         raise FileNotFoundError('No data was provided.')
 
     # Create a folder for the model if it does not already exist.
-    os.makedirs(model_folder, exist_ok=True)
+    os.makedirs(model_folder, exist_ok=True)#创建文件目录
 
     # Extract the features and labels.
     if verbose >= 1:
         print('Extracting features and labels from the Challenge data...')
 
-    features = list()
+    features = list()#这里的features还不知道是什么东西，先看着
     outcomes = list()
     cpcs = list()
 
@@ -52,18 +64,20 @@ def train_challenge_model(data_folder, model_folder, verbose):
         # Load data.
         patient_id = patient_ids[i]
         patient_metadata, recording_metadata, recording_data = load_challenge_data(data_folder, patient_id)
+        #用于批处理的问你件名加载的，patient_metadata是txt文件，记录个人信息，而recording_metadata记录着tsv文件（一个比较复杂的评价标准）
 
-        # Extract features.
+        # Extract features.提取特征，可以针对这里进行修改
         current_features = get_features(patient_metadata, recording_metadata, recording_data)
         features.append(current_features)
 
-        # Extract labels.
+        # Extract labels.提取模型
         current_outcome = get_outcome(patient_metadata)
         outcomes.append(current_outcome)
         current_cpc = get_cpc(patient_metadata)
         cpcs.append(current_cpc)
 
     features = np.vstack(features)
+
     outcomes = np.vstack(outcomes)
     cpcs = np.vstack(cpcs)
 
@@ -107,6 +121,22 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     cpc_model = models['cpc_model']
 
     # Load data.
+    #patient_metadata是'Patient: ICARE_0284、Age: 53Sex: MaleROSC: nan，OHCA: TrueVFib: TrueTM: 33Outcome: GoodCPC: 1此内容
+    # recording_metadata是这样一个文本值，这里其实是读的tsv文件，他官方的代码就只选用前12个小时的
+    # Hour	Time	Quality	Record
+    # 01	nan	nan	nan
+    # 02	nan	nan	nan
+    # 03	nan	nan	nan
+    # 04	nan	nan	nan
+    # 05	04:25	1.000	ICARE_0284_05
+    # 06	05:55	1.000	ICARE_0284_06
+    # 07	06:50	1.000	ICARE_0284_07
+    # 08	07:55	1.000	ICARE_0284_08
+    # 09	08:55	0.983	ICARE_0284_09
+    # 10	09:55	1.000	ICARE_0284_10
+    # 11	10:30	1.000	ICARE_0284_11
+    # 12	11:00	0.817	ICARE_0284_12
+    #recording是前12个的内容，其中除非是nan，否则都会是18*30000的array
     patient_metadata, recording_metadata, recording_data = load_challenge_data(data_folder, patient_id)
 
     # Extract features.
@@ -163,10 +193,10 @@ def get_features(patient_metadata, recording_metadata, recording_data):
         male   = 0
         other  = 1
 
-    # Combine the patient features.
+    # Combine the patient features,【年龄，性别等信息】
     patient_features = np.array([age, female, male, other, rosc, ohca, vfib, ttm])
 
-    # Extract features from the recording data and metadata.
+    # Extract features from the recording data and metadata.提取特征
     channels = ['Fp1-F7', 'F7-T3', 'T3-T5', 'T5-O1', 'Fp2-F8', 'F8-T4', 'T4-T6', 'T6-O2', 'Fp1-F3',
                 'F3-C3', 'C3-P3', 'P3-O1', 'Fp2-F4', 'F4-C4', 'C4-P4', 'P4-O2', 'Fz-Cz', 'Cz-Pz']
     num_channels = len(channels)
@@ -215,10 +245,11 @@ def get_features(patient_metadata, recording_metadata, recording_data):
     else:
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
         quality_score = float('nan')
-
+    #依次的长度为18*6 = 108 +1 =109
     recording_features = np.hstack((signal_mean, signal_std, delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean, quality_score))
 
-    # Combine the features from the patient metadata and the recording data and metadata.
+    # Combine the features from the patient metadata and the recording data and metadata.np.vstack():在竖直方向上堆叠,np.hstack():在水平方向上平铺
+    #拼接array，patient_feature的长度为8个，recording的长度为109个，共计117个。
     features = np.hstack((patient_features, recording_features))
 
     return features
