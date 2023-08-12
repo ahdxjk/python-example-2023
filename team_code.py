@@ -86,9 +86,10 @@ def train_challenge_model(data_folder, model_folder, verbose):
     # Impute any missing features; use the mean value by default.
     imputer = SimpleImputer().fit(features)
 
+
     # Train the models.
     features = imputer.transform(features)
-    print(features.shape)
+    #print(features.shape)
     include_file = np.column_stack((features, outcomes))
     include_file_cpc = np.column_stack((features, cpcs))
     CCA_model_outcomes = fit(include_file)
@@ -129,9 +130,15 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     # Extract features.
     features = get_features(data_folder, patient_id)
     features = features.reshape(1, -1)
-
+    #print("在运行阶段提取到的特征1为",features.shape)
     # Impute missing data.
+    if features.shape[1] != full_features.shape[1] :
+        x = full_features.shape[1] - features.shape[1]
+        for i in range(1, x ):
+            features = np.column_stack(((features, np.arange(0, range(0, features.shape[1])))))
+
     features = imputer.transform(features)
+    #print("在运行阶段提取到的特征2为",features.shape)
 
     # Apply models to features.
     outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features)#集成所有的outcome结果
@@ -275,7 +282,7 @@ def get_patient_features(data):
         other  = 1
 
     features = np.hstack((age, female, male, other, rosc, ohca, shockable_rhythm, ttm))
-    print("patient_feature", features.shape)
+    #print("patient_feature", features.shape)
     return features
 
 # Extract features from the EEG data.
@@ -283,9 +290,24 @@ def get_eeg_features(data, sampling_frequency):
     num_channels, num_samples = np.shape(data)
 
     if num_samples > 0:
+        # 首先是时域特征，均值，方差，偏斜度等等特征
+        signal_mean = np.nanmean(data, axis=1)  # 均值
+        signal_std = np.nanstd(data, axis=1)  # 方差
+        signal_max = np.nanmax(data, axis=1)  # 最大值
+        signal_min = np.nanmin(data, axis=1)  # 最小值
+        signal_var = np.nanvar(data, axis=1)  # 标准差
+        signal_sc = []
+        for i in range(0, len(data) - 1):
+            data_single = data[i][:]
+            data_single_mean = np.mean(data_single)
+            data_single_std = np.std(data_single, ddof=1)
+            signal_sc.append(np.mean(((data_single - data_single_mean) / data_single_std) ** 3))
+        signal_sc = np.array(signal_sc)  # 计算偏斜度
+
+        # 大致理解为平均值和方差值
         signal_data_get_feature = expand_feature(data)
         signal_data_get_feature = signal_data_get_feature.ravel()
-        print("expand", signal_data_get_feature.shape)
+        #print("expand", signal_data_get_feature.shape)
         delta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
         theta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
         alpha_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=8.0, fmax=12.0, verbose=False)
@@ -304,7 +326,10 @@ def get_eeg_features(data, sampling_frequency):
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
         delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
 
-    features = np.hstack((delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean, delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum, signal_data_get_feature)).T
+    features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
+                          signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
+                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,
+                          signal_data_get_feature)).T
     print("eeg features", features.shape)
     return features
 
@@ -323,7 +348,7 @@ def get_ecg_features(data):
         std = float('nan') * np.ones(num_channels)
 
     features = np.array((mean, std)).T
-    print("ecg features", features.shape)
+    #print("ecg features", features.shape)
     return features
 
 def rfe(features, outcomes):
