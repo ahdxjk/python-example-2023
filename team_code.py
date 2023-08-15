@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-
+import pandas as pd
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
 
@@ -12,6 +12,8 @@
 from sklearn.impute import KNNImputer
 from helper_code import *
 import tsfresh
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from tsfresh.feature_extraction import extract_features, ComprehensiveFCParameters, settings
 from sklearn.feature_selection import RFE
 from sklearn.svm import SVR
@@ -19,6 +21,7 @@ import numpy as np, os, sys
 from CCA_NEW import *
 from sklearn.decomposition import PCA
 import mne
+from sklearn import ensemble
 import warnings
 warnings.filterwarnings('ignore')
 from sklearn.impute import SimpleImputer
@@ -89,23 +92,44 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     # Train the models.
     features = imputer.transform(features)
-    #print(features.shape)
+
+    #pycaret
+    #csv1 = np.hstack((features, outcomes))
+    #csv2 = np.hstack((features,cpcs))
+    #csv1 = pd.DataFrame(csv1)
+    #csv2 = pd.DataFrame(csv2)
+    #csv1.to_csv("/home/coding/outcome")
+    #csv2.to_csv("/home/coding/cpc")
+
+
+    #CCA model
     include_file = np.column_stack((features, outcomes))
     include_file_cpc = np.column_stack((features, cpcs))
     CCA_model_outcomes = fit(include_file)
     CCA_model_cpcs = fit(include_file_cpc)
-    #features_rfe = rfe(features, outcomes)
-    relief = RelifF(10, 0.1, 5)
-    #features_relief = relief.fit_transform(features, outcomes.ravel())
 
+    #PCA 和 RELIEF 特征选择
+    #features_rfe = rfe(features, outcomes)
+    #relief = RelifF(10, 0.1, 5)
+    #features_relief = relief.fit_transform(features, outcomes.ravel())
+    # available_signal_data_pca = PCA(n_components= 1)#pca
+    # available_signal_data_pca_feature = available_signal_data_pca.fit_transform(available_signal_data)
+    # available_signal_data_pca_feature = np.ravel(available_signal_data_pca_feature)
+
+    #rf
     outcome_model = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes,
                                            random_state=random_state).fit(features, outcomes.ravel())
 
     cpc_model = RandomForestRegressor(
         n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs.ravel())
 
+    #gbc
+    gbc_outcome_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth = 1, random_state = 0).fit(features, outcomes.ravel())
+    gbc_cpc_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0).fit(features, cpcs.ravel())
+
+
     # Save the models.
-    save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features)
+    save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features, gbc_outcome_model , gbc_cpc_model)
 
     if verbose >= 1:
         print('Done.')
@@ -126,30 +150,37 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     CCA_model_outcomes = models['CCA_model_outcomes']
     CCA_model_cpcs = models['CCA_model_cpcs']
     full_features = models['full_features']
+    gbc_outcome_model = models['gbc_outcome_model']
+    gbc_cpc_model = models['gbc_cpc_model']
+
 
     # Extract features.
     features = get_features(data_folder, patient_id)
     features = features.reshape(1, -1)
     #print("在运行阶段提取到的特征1为",features.shape)
     # Impute missing data.
+    #print(features.shape)
+    #print(full_features.shape)
     if features.shape[1] != full_features.shape[1] :
         x = full_features.shape[1] - features.shape[1]
-        for i in range(1, x ):
-            features = np.column_stack(((features, np.arange(0, range(0, features.shape[1])))))
+        for i in range(0, x):
+            connect = np.arange(0, features.shape[0])
+            features = np.column_stack((features, connect))
 
     features = imputer.transform(features)
     #print("在运行阶段提取到的特征2为",features.shape)
 
-    # Apply models to features.
-    outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features)#集成所有的outcome结果
+    # Apply models to features.1
+    outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features, gbc_outcome_model)#集成所有的outcome结果
 
 
     #print("outcome预测结果为：", outcome)
     outcome_probability = outcome_model.predict_proba(features)[0, 1]
-    cpc = bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features)
+    cpc = bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features, gbc_cpc_model)
     # Ensure that the CPC score is between (or equal to) 1 and 5.
     cpc = np.clip(cpc, 1, 5)
-
+    #print("result", outcome ,end= " ")
+    #print(cpc)
     return outcome, outcome_probability, cpc
 
 ################################################################################
@@ -159,8 +190,9 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 ################################################################################
 
 # Save your trained model.
-def save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features):
-    d = {'imputer': imputer, 'outcome_model': outcome_model, 'cpc_model': cpc_model,'CCA_model_outcomes': CCA_model_outcomes, 'CCA_model_cpcs': CCA_model_cpcs,'full_features': features}
+def save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features, gbc_outcome_model , gbc_cpc_model):
+    d = {'imputer': imputer, 'outcome_model': outcome_model, 'cpc_model': cpc_model,'CCA_model_outcomes': CCA_model_outcomes,
+         'CCA_model_cpcs': CCA_model_cpcs,'full_features': features, 'gbc_outcome_model' : gbc_outcome_model, 'gbc_cpc_model' : gbc_cpc_model }
     filename = os.path.join(model_folder, 'models.sav')
     joblib.dump(d, filename, protocol=0)
 
@@ -366,18 +398,19 @@ def reliefF(features, outcomes):
     return relief_features
 
 
-def bagging_outcome(outcome_model, CCA_model, features, full_features):
+def bagging_outcome(outcome_model, CCA_model, features, full_features, gbc_outcome_model):
     outcome_list = []
-    #features_rfe = rfe(features, outcomes)#rfe处理数据集
-    #features_relief = reliefF(features, outcomes)#relief处理数据集
     outcomes = list()
     outcome1 = outcome_model.predict(features)[0]
     outcome2 = CCA_test(full_features, features, CCA_model)
-
+    outcome3 = gbc_outcome_model.predict(features)
     #print("随机森林结果",outcome1)
     #print("CCA结果",outcome2)
+    #print("pbc结果", outcome3)
     outcome_list.append(outcome1)
     outcome_list.append(outcome2)
+    outcome_list.append(outcome3)
+    #集成硬投票
     x = 0
     y = 0
     for i in range(len(outcome_list)):
@@ -385,22 +418,21 @@ def bagging_outcome(outcome_model, CCA_model, features, full_features):
             x = x+1
         else :
             y = y+1
-    if x >= y :
+    if x > y :
         outcome = 0
     else :
-        outcome = random.choice([0, 1])
+        outcome = 1
 
     return  outcome
 
-def bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features):
+def bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features, gbc_cpc_model):
     cpc1 = cpc_model.predict(features)[0]
     cpc2 = CCA_test(full_features, features, CCA_model_cpcs)
-    if cpc1 == cpc2:
-        cpc = cpc2
-    else:
-        cpc = random.choice([cpc1, cpc2])
-
-
+    cpc3 = gbc_cpc_model.predict(features)[0]
+    #print("随机森林cpc",cpc1)
+    #print("CCA结果cpc",cpc2)
+    #print("pbc结果cpc", cpc3)
+    cpc = (cpc2 + cpc3)/2
     return  cpc
 
 def expand_feature(data):
