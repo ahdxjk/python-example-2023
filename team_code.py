@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import pandas as pd
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
 
@@ -29,6 +28,8 @@ from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
 from sklearn.linear_model import LogisticRegression
 from feature_selections_relifF import *
+import pandas as pd
+import  pywt
 
 ################################################################################
 #
@@ -320,6 +321,11 @@ def get_patient_features(data):
 # Extract features from the EEG data.
 def get_eeg_features(data, sampling_frequency):
     num_channels, num_samples = np.shape(data)
+    print(data.shape)
+
+    #abc = pd.DataFrame(data)
+    #abc.to_csv("/home/coding/sample_data")
+
 
     if num_samples > 0:
         # 首先是时域特征，均值，方差，偏斜度等等特征
@@ -357,6 +363,11 @@ def get_eeg_features(data, sampling_frequency):
     else:
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
         delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
+
+    #小波包分解
+
+
+
 
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
