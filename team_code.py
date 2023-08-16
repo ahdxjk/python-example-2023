@@ -29,7 +29,7 @@ import joblib
 from sklearn.linear_model import LogisticRegression
 from feature_selections_relifF import *
 import pandas as pd
-import  pywt
+
 
 ################################################################################
 #
