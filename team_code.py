@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
 
@@ -9,12 +8,28 @@
 #
 ################################################################################
 
+from sklearn.impute import KNNImputer
 from helper_code import *
+import tsfresh
+from sklearn.datasets import make_hastie_10_2
+from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
+from tsfresh.feature_extraction import extract_features, ComprehensiveFCParameters, settings
+from sklearn.feature_selection import RFE
+from sklearn.svm import SVR
 import numpy as np, os, sys
+from CCA_NEW import *
+from sklearn.decomposition import PCA
 import mne
+from sklearn import ensemble
+import warnings
+warnings.filterwarnings('ignore')
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
+from sklearn.linear_model import LogisticRegression
+from feature_selections_relifF import *
+import pandas as pd
+import  pywt
 
 ################################################################################
 #
@@ -75,18 +90,51 @@ def train_challenge_model(data_folder, model_folder, verbose):
     # Impute any missing features; use the mean value by default.
     imputer = SimpleImputer().fit(features)
 
+
     # Train the models.
     features = imputer.transform(features)
-    outcome_model = RandomForestClassifier(
-        n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, outcomes.ravel())
+
+    #pycaret
+    #csv1 = np.hstack((features, outcomes))
+    #csv2 = np.hstack((features,cpcs))
+    #csv1 = pd.DataFrame(csv1)
+    #csv2 = pd.DataFrame(csv2)
+    #csv1.to_csv("/home/coding/outcome")
+    #csv2.to_csv("/home/coding/cpc")
+
+
+    #CCA model
+    include_file = np.column_stack((features, outcomes))
+    include_file_cpc = np.column_stack((features, cpcs))
+    CCA_model_outcomes = fit(include_file)
+    CCA_model_cpcs = fit(include_file_cpc)
+
+    #PCA 和 RELIEF 特征选择
+    #features_rfe = rfe(features, outcomes)
+    #relief = RelifF(10, 0.1, 5)
+    #features_relief = relief.fit_transform(features, outcomes.ravel())
+    # available_signal_data_pca = PCA(n_components= 1)#pca
+    # available_signal_data_pca_feature = available_signal_data_pca.fit_transform(available_signal_data)
+    # available_signal_data_pca_feature = np.ravel(available_signal_data_pca_feature)
+
+    #rf
+    outcome_model = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes,
+                                           random_state=random_state).fit(features, outcomes.ravel())
+
     cpc_model = RandomForestRegressor(
         n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs.ravel())
 
+    #gbc
+    gbc_outcome_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth = 1, random_state = 0).fit(features, outcomes.ravel())
+    gbc_cpc_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0).fit(features, cpcs.ravel())
+
+
     # Save the models.
-    save_challenge_model(model_folder, imputer, outcome_model, cpc_model)
+    save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features, gbc_outcome_model , gbc_cpc_model)
 
     if verbose >= 1:
         print('Done.')
+
 
 # Load your trained models. This function is *required*. You should edit this function to add your code, but do *not* change the
 # arguments of this function.
@@ -100,22 +148,40 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     imputer = models['imputer']
     outcome_model = models['outcome_model']
     cpc_model = models['cpc_model']
+    CCA_model_outcomes = models['CCA_model_outcomes']
+    CCA_model_cpcs = models['CCA_model_cpcs']
+    full_features = models['full_features']
+    gbc_outcome_model = models['gbc_outcome_model']
+    gbc_cpc_model = models['gbc_cpc_model']
+
 
     # Extract features.
     features = get_features(data_folder, patient_id)
     features = features.reshape(1, -1)
-
+    #print("在运行阶段提取到的特征1为",features.shape)
     # Impute missing data.
+    #print(features.shape)
+    #print(full_features.shape)
+    if features.shape[1] != full_features.shape[1] :
+        x = full_features.shape[1] - features.shape[1]
+        for i in range(0, x):
+            connect = np.arange(0, features.shape[0])
+            features = np.column_stack((features, connect))
+
     features = imputer.transform(features)
+    #print("在运行阶段提取到的特征2为",features.shape)
 
-    # Apply models to features.
-    outcome = outcome_model.predict(features)[0]
+    # Apply models to features.1
+    outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features, gbc_outcome_model)#集成所有的outcome结果
+
+
+    #print("outcome预测结果为：", outcome)
     outcome_probability = outcome_model.predict_proba(features)[0, 1]
-    cpc = cpc_model.predict(features)[0]
-
+    cpc = bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features, gbc_cpc_model)
     # Ensure that the CPC score is between (or equal to) 1 and 5.
     cpc = np.clip(cpc, 1, 5)
-
+    #print("result", outcome ,end= " ")
+    #print(cpc)
     return outcome, outcome_probability, cpc
 
 ################################################################################
@@ -125,8 +191,9 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 ################################################################################
 
 # Save your trained model.
-def save_challenge_model(model_folder, imputer, outcome_model, cpc_model):
-    d = {'imputer': imputer, 'outcome_model': outcome_model, 'cpc_model': cpc_model}
+def save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features, gbc_outcome_model , gbc_cpc_model):
+    d = {'imputer': imputer, 'outcome_model': outcome_model, 'cpc_model': cpc_model,'CCA_model_outcomes': CCA_model_outcomes,
+         'CCA_model_cpcs': CCA_model_cpcs,'full_features': features, 'gbc_outcome_model' : gbc_outcome_model, 'gbc_cpc_model' : gbc_cpc_model }
     filename = os.path.join(model_folder, 'models.sav')
     joblib.dump(d, filename, protocol=0)
 
@@ -177,8 +244,10 @@ def get_features(data_folder, patient_id):
     patient_features = get_patient_features(patient_metadata)
 
     # Extract EEG features.
-    eeg_channels = ['F3', 'P3', 'F4', 'P4']
+    # eeg_channels = ['Fp1-F7', 'F7-T3', 'T3-T5', 'T5-O1', 'Fp2-F8', 'F8-T4', 'T4-T6', 'T6-O2', 'Fp1-F3','F3-C3', 'C3-P3', 'P3-O1', 'Fp2-F4', 'F4-C4', 'C4-P4', 'P4-O2', 'Fz-Cz', 'Cz-Pz']
+    eeg_channels = ['Fp1', 'Fp2', 'F7', 'F8', 'F3', 'F4', 'T3', 'T4', 'C3', 'C4', 'T5', 'T6', 'P3', 'P4', 'O1', 'O2', 'Fz', 'Cz', 'Pz']
     group = 'EEG'
+
 
     if num_recordings > 0:
         recording_id = recording_ids[-1]
@@ -190,7 +259,12 @@ def get_features(data_folder, patient_id):
             if all(channel in channels for channel in eeg_channels):
                 data, channels = reduce_channels(data, channels, eeg_channels)
                 data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
-                data = np.array([data[0, :] - data[1, :], data[2, :] - data[3, :]]) # Convert to bipolar montage: F3-P3 and F4-P4
+                data = np.array([data[0, :] - data[2, :], data[2, :] - data[6, :], data[6,:] - data[10,:],data[ 10,:] - data[14,:]
+                                ,data[1,:] - data[3,:], data[3,:] - data[7,:], data[7,:] - data[11,:], data[11,:] - data[15,:]
+                                ,data[0,:] - data[4,:], data[4,:] - data[8,:], data[8,:] - data[12], data[12,:] - data[14 ,:]
+                                ,data[1,:] - data[5,:], data[5,:] - data[9,:], data[9,:] - data[13], data[13,:] - data[15 ,:]
+                                ,data[16,:] - data[17,:], data[17, :] - data[18,:]])
+                #print(data)
                 eeg_features = get_eeg_features(data, sampling_frequency).flatten()
             else:
                 eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
@@ -220,6 +294,8 @@ def get_features(data_folder, patient_id):
         ecg_features = float('nan') * np.ones(10) # 5 channels * 2 features / channel
 
     # Extract features.
+    hhh = np.hstack((patient_features, eeg_features, ecg_features))
+    print("features", hhh.shape)
     return np.hstack((patient_features, eeg_features, ecg_features))
 
 # Extract patient features from the data.
@@ -245,15 +321,38 @@ def get_patient_features(data):
         male   = 0
         other  = 1
 
-    features = np.array((age, female, male, other, rosc, ohca, shockable_rhythm, ttm))
-
+    features = np.hstack((age, female, male, other, rosc, ohca, shockable_rhythm, ttm))
+    #print("patient_feature", features.shape)
     return features
 
 # Extract features from the EEG data.
 def get_eeg_features(data, sampling_frequency):
     num_channels, num_samples = np.shape(data)
+    print(data.shape)
+
+    #abc = pd.DataFrame(data)
+    #abc.to_csv("/home/coding/sample_data")
+    #exit(1)
 
     if num_samples > 0:
+        # 首先是时域特征，均值，方差，偏斜度等等特征
+        signal_mean = np.nanmean(data, axis=1)  # 均值
+        signal_std = np.nanstd(data, axis=1)  # 方差
+        signal_max = np.nanmax(data, axis=1)  # 最大值
+        signal_min = np.nanmin(data, axis=1)  # 最小值
+        signal_var = np.nanvar(data, axis=1)  # 标准差
+        signal_sc = []
+        for i in range(0, len(data) - 1):
+            data_single = data[i][:]
+            data_single_mean = np.mean(data_single)
+            data_single_std = np.std(data_single, ddof=1)
+            signal_sc.append(np.mean(((data_single - data_single_mean) / data_single_std) ** 3))
+        signal_sc = np.array(signal_sc)  # 计算偏斜度
+
+        # 大致理解为平均值和方差值
+        signal_data_get_feature = expand_feature(data)
+        signal_data_get_feature = signal_data_get_feature.ravel()
+        #print("expand", signal_data_get_feature.shape)
         delta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
         theta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
         alpha_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=8.0, fmax=12.0, verbose=False)
@@ -263,11 +362,22 @@ def get_eeg_features(data, sampling_frequency):
         theta_psd_mean = np.nanmean(theta_psd, axis=1)
         alpha_psd_mean = np.nanmean(alpha_psd, axis=1)
         beta_psd_mean  = np.nanmean(beta_psd,  axis=1)
+
+        delta_psd_sum = np.nansum(delta_psd, axis=1)
+        theta_psd_sum = np.nansum(theta_psd, axis=1)
+        alpha_psd_sum = np.nansum(alpha_psd, axis=1)
+        beta_psd_sum = np.nansum(beta_psd, axis=1)
     else:
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
+        delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
 
-    features = np.array((delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean)).T
-
+    #小波包分解
+    occupy = dwt(data,3)
+    features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
+                          signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
+                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,occupy,
+                          signal_data_get_feature)).T
+    print("eeg features", features.shape)
     return features
 
 # Extract features from the ECG data.
@@ -285,5 +395,84 @@ def get_ecg_features(data):
         std = float('nan') * np.ones(num_channels)
 
     features = np.array((mean, std)).T
-
+    #print("ecg features", features.shape)
     return features
+
+def rfe(features, outcomes):
+    estimator = LogisticRegression()
+    selector = RFE(estimator, n_features_to_select=0.5, step=1)
+    #selector是经过rfe筛选过后的特征
+    selector = selector.fit_transform(features, outcomes)
+    return selector
+
+def reliefF(features, outcomes):
+    features = np.array(features)
+    outcomes = np.ravel(outcomes)
+    reliefF_classify = RelifF(10, 0.1, 5)
+    relief_features = reliefF_classify.fit_transform(features, outcomes)
+    return relief_features
+
+
+def bagging_outcome(outcome_model, CCA_model, features, full_features, gbc_outcome_model):
+    outcome_list = []
+    outcomes = list()
+    outcome1 = outcome_model.predict(features)[0]
+    outcome2 = CCA_test(full_features, features, CCA_model)
+    outcome3 = gbc_outcome_model.predict(features)
+    #print("随机森林结果",outcome1)
+    #print("CCA结果",outcome2)
+    #print("pbc结果", outcome3)
+    outcome_list.append(outcome1)
+    outcome_list.append(outcome2)
+    outcome_list.append(outcome3)
+    #集成硬投票
+    x = 0
+    y = 0
+    for i in range(len(outcome_list)):
+        if outcome_list[i] == 0 :
+            x = x+1
+        else :
+            y = y+1
+    if x > y :
+        outcome = 0
+    else :
+        outcome = 1
+
+    return  outcome
+
+def bagging_cpc(cpc_model, CCA_model_cpcs, features, full_features, gbc_cpc_model):
+    cpc1 = cpc_model.predict(features)[0]
+    cpc2 = CCA_test(full_features, features, CCA_model_cpcs)
+    cpc3 = gbc_cpc_model.predict(features)[0]
+    #print("随机森林cpc",cpc1)
+    #print("CCA结果cpc",cpc2)
+    #print("pbc结果cpc", cpc3)
+    cpc = (cpc2 + cpc3)/2
+    return  cpc
+
+def expand_feature(data):
+    data_df = pd.DataFrame(data)
+    data_t = data_df.T
+    data_t.insert(loc=0, column= 'time', value = range(len(data_t)))
+    data_t.insert(loc=0, column='id', value = 1)
+    data_t['time'] = range(len(data_t))
+    extracted_features = extract_features(data_t, column_id="id", default_fc_parameters=settings.MinimalFCParameters() )
+    extracted_features_t = extracted_features.T
+    #print(extracted_features_t)
+    return extracted_features_t.values
+
+def dwt(signal, n):
+   wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
+   re = []  # 第n层所有节点的分解系数
+   for i in [node.path for node in wp.get_level(n, 'freq')]:
+      re.append(wp[i].data)
+   # 第n层能量特征
+   energy = []
+   for i in re:
+      energy.append(pow(np.linalg.norm(i, ord=None), 2))
+   occury = energy[0] / sum(energy)
+
+   return  occury
+
+
+
