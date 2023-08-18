@@ -29,7 +29,7 @@ import joblib
 from sklearn.linear_model import LogisticRegression
 from feature_selections_relifF import *
 import pandas as pd
-
+import  pywt
 
 ################################################################################
 #
@@ -244,8 +244,10 @@ def get_features(data_folder, patient_id):
     patient_features = get_patient_features(patient_metadata)
 
     # Extract EEG features.
-    eeg_channels = ['F3', 'P3', 'F4', 'P4']
+    # eeg_channels = ['Fp1-F7', 'F7-T3', 'T3-T5', 'T5-O1', 'Fp2-F8', 'F8-T4', 'T4-T6', 'T6-O2', 'Fp1-F3','F3-C3', 'C3-P3', 'P3-O1', 'Fp2-F4', 'F4-C4', 'C4-P4', 'P4-O2', 'Fz-Cz', 'Cz-Pz']
+    eeg_channels = ['Fp1', 'Fp2', 'F7', 'F8', 'F3', 'F4', 'T3', 'T4', 'C3', 'C4', 'T5', 'T6', 'P3', 'P4', 'O1', 'O2', 'Fz', 'Cz', 'Pz']
     group = 'EEG'
+
 
     if num_recordings > 0:
         recording_id = recording_ids[-1]
@@ -257,7 +259,12 @@ def get_features(data_folder, patient_id):
             if all(channel in channels for channel in eeg_channels):
                 data, channels = reduce_channels(data, channels, eeg_channels)
                 data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
-                data = np.array([data[0, :] - data[1, :], data[2, :] - data[3, :]]) # Convert to bipolar montage: F3-P3 and F4-P4
+                data = np.array([data[0, :] - data[2, :], data[2, :] - data[6, :], data[6,:] - data[10,:],data[ 10,:] - data[14,:]
+                                ,data[1,:] - data[3,:], data[3,:] - data[7,:], data[7,:] - data[11,:], data[11,:] - data[15,:]
+                                ,data[0,:] - data[4,:], data[4,:] - data[8,:], data[8,:] - data[12], data[12,:] - data[14 ,:]
+                                ,data[1,:] - data[5,:], data[5,:] - data[9,:], data[9,:] - data[13], data[13,:] - data[15 ,:]
+                                ,data[16,:] - data[17,:], data[17, :] - data[18,:]])
+                #print(data)
                 eeg_features = get_eeg_features(data, sampling_frequency).flatten()
             else:
                 eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
@@ -325,7 +332,7 @@ def get_eeg_features(data, sampling_frequency):
 
     #abc = pd.DataFrame(data)
     #abc.to_csv("/home/coding/sample_data")
-
+    #exit(1)
 
     if num_samples > 0:
         # 首先是时域特征，均值，方差，偏斜度等等特征
@@ -365,13 +372,10 @@ def get_eeg_features(data, sampling_frequency):
         delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
 
     #小波包分解
-
-
-
-
+    occupy = dwt(data,3)
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
-                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,
+                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,occupy,
                           signal_data_get_feature)).T
     print("eeg features", features.shape)
     return features
@@ -456,5 +460,19 @@ def expand_feature(data):
     extracted_features_t = extracted_features.T
     #print(extracted_features_t)
     return extracted_features_t.values
+
+def dwt(signal, n):
+   wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
+   re = []  # 第n层所有节点的分解系数
+   for i in [node.path for node in wp.get_level(n, 'freq')]:
+      re.append(wp[i].data)
+   # 第n层能量特征
+   energy = []
+   for i in re:
+      energy.append(pow(np.linalg.norm(i, ord=None), 2))
+   occury = energy[0] / sum(energy)
+
+   return  occury
+
 
 
