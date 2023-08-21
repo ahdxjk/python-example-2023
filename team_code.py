@@ -350,8 +350,8 @@ def get_eeg_features(data, sampling_frequency):
         signal_sc = np.array(signal_sc)  # 计算偏斜度
 
         # 大致理解为平均值和方差值
-        signal_data_get_feature = expand_feature(data)
-        signal_data_get_feature = signal_data_get_feature.ravel()
+        #signal_data_get_feature = expand_feature(data)
+        #signal_data_get_feature = signal_data_get_feature.ravel()
         #print("expand", signal_data_get_feature.shape)
         delta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
         theta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
@@ -375,8 +375,8 @@ def get_eeg_features(data, sampling_frequency):
     occupy = dwt(data,3)
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
-                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,occupy,
-                          signal_data_get_feature)).T
+                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,occupy
+                          )).T
     print("eeg features", features.shape)
     return features
 
