@@ -47,9 +47,8 @@ def train_challenge_model(data_folder, model_folder, verbose):
     patient_ids = find_data_folders(data_folder)
     num_patients = len(patient_ids)
 
-        if num_patients==0:
+    if num_patients==0:
         raise FileNotFoundError('No data was provided.')
-
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
 
@@ -273,7 +272,7 @@ def get_features(data_folder, patient_id):
             eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
     else:
         eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
-    #print('eeeeeeg', eeg_features.shape)
+    print('eeeeeeg', eeg_features.shape)
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
     group = 'ECG'
@@ -284,19 +283,21 @@ def get_features(data_folder, patient_id):
         if os.path.exists(recording_location + '.hea'):
             data, channels, sampling_frequency = load_recording_data(recording_location)
             utility_frequency = get_utility_frequency(recording_location + '.hea')
-
             data, channels = reduce_channels(data, channels, ecg_channels)
             data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
-            features = get_ecg_features(data)
-            ecg_features = expand_channels(features, channels, ecg_channels).flatten()
+            if data.shape[1] < 1024 :
+                ecg_features = float('nan') * np.ones(50)
+            else:
+                features = get_ecg_features(data)
+                ecg_features = expand_channels(features, channels, ecg_channels).flatten()
         else:
             ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
     else:
         ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
-    #print('ecgggggg', ecg_features.shape)
+    print('ecgggggg', ecg_features.shape)
     # Extract features.
     hhh = np.hstack((patient_features, eeg_features, ecg_features))
-    #print('feature',hhh.shape)
+    print('feature',hhh.shape)
     return np.hstack((patient_features, eeg_features, ecg_features))
 
 # Extract patient features from the data.
@@ -428,7 +429,9 @@ def get_ecg_features(data):
         features = features.T
 
     else:
-        features = float('nan') * np.ones(50)
+        mean = float('nan') * np.ones(num_channels)
+        std = float('nan') * np.ones(num_channels)
+
 
     return features
 
