@@ -30,6 +30,7 @@ from sklearn.linear_model import LogisticRegression
 from feature_selections_relifF import *
 import pandas as pd
 import  pywt
+from scipy import signal
 
 ################################################################################
 #
@@ -46,7 +47,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     patient_ids = find_data_folders(data_folder)
     num_patients = len(patient_ids)
 
-    if num_patients==0:
+        if num_patients==0:
         raise FileNotFoundError('No data was provided.')
 
     # Create a folder for the model if it does not already exist.
@@ -93,7 +94,6 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     # Train the models.
     features = imputer.transform(features)
-
     #pycaret
     #csv1 = np.hstack((features, outcomes))
     #csv2 = np.hstack((features,cpcs))
@@ -103,19 +103,18 @@ def train_challenge_model(data_folder, model_folder, verbose):
     #csv2.to_csv("/home/coding/cpc")
 
 
+    #PCA 和 RELIEF 特征选择
+    #pca = PCA(n_components=400)
+    #features = pca.fit_transform(features)
+    #print(features.shape)
+
+
     #CCA model
     include_file = np.column_stack((features, outcomes))
     include_file_cpc = np.column_stack((features, cpcs))
     CCA_model_outcomes = fit(include_file)
     CCA_model_cpcs = fit(include_file_cpc)
 
-    #PCA 和 RELIEF 特征选择
-    #features_rfe = rfe(features, outcomes)
-    #relief = RelifF(10, 0.1, 5)
-    #features_relief = relief.fit_transform(features, outcomes.ravel())
-    # available_signal_data_pca = PCA(n_components= 1)#pca
-    # available_signal_data_pca_feature = available_signal_data_pca.fit_transform(available_signal_data)
-    # available_signal_data_pca_feature = np.ravel(available_signal_data_pca_feature)
 
     #rf
     outcome_model = RandomForestClassifier(n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes,
@@ -125,9 +124,10 @@ def train_challenge_model(data_folder, model_folder, verbose):
         n_estimators=n_estimators, max_leaf_nodes=max_leaf_nodes, random_state=random_state).fit(features, cpcs.ravel())
 
     #gbc
-    gbc_outcome_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth = 1, random_state = 0).fit(features, outcomes.ravel())
-    gbc_cpc_model = GradientBoostingClassifier(n_estimators=100, learning_rate=1.0, max_depth=1, random_state=0).fit(features, cpcs.ravel())
+    gbc_outcome_model = GradientBoostingClassifier(n_estimators=123, learning_rate=1.0, max_depth = 1, random_state = 789).fit(features, outcomes.ravel())
+    gbc_cpc_model = GradientBoostingClassifier(n_estimators=123, learning_rate=1.0, max_depth=1, random_state=789).fit(features, cpcs.ravel())
 
+    #ada
 
     # Save the models.
     save_challenge_model(model_folder, imputer, outcome_model, cpc_model, CCA_model_outcomes, CCA_model_cpcs, features, gbc_outcome_model , gbc_cpc_model)
@@ -153,6 +153,7 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     full_features = models['full_features']
     gbc_outcome_model = models['gbc_outcome_model']
     gbc_cpc_model = models['gbc_cpc_model']
+
 
 
     # Extract features.
@@ -258,13 +259,14 @@ def get_features(data_folder, patient_id):
 
             if all(channel in channels for channel in eeg_channels):
                 data, channels = reduce_channels(data, channels, eeg_channels)
+                data
                 data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
                 data = np.array([data[0, :] - data[2, :], data[2, :] - data[6, :], data[6,:] - data[10,:],data[ 10,:] - data[14,:]
                                 ,data[1,:] - data[3,:], data[3,:] - data[7,:], data[7,:] - data[11,:], data[11,:] - data[15,:]
                                 ,data[0,:] - data[4,:], data[4,:] - data[8,:], data[8,:] - data[12], data[12,:] - data[14 ,:]
                                 ,data[1,:] - data[5,:], data[5,:] - data[9,:], data[9,:] - data[13], data[13,:] - data[15 ,:]
                                 ,data[16,:] - data[17,:], data[17, :] - data[18,:]])
-                #print(data)
+                #data = data[ : , :320000]
                 eeg_features = get_eeg_features(data, sampling_frequency).flatten()
             else:
                 eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
@@ -272,7 +274,7 @@ def get_features(data_folder, patient_id):
             eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
     else:
         eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
-
+    print('eeeeeeg', eeg_features.shape)
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
     group = 'ECG'
@@ -289,13 +291,13 @@ def get_features(data_folder, patient_id):
             features = get_ecg_features(data)
             ecg_features = expand_channels(features, channels, ecg_channels).flatten()
         else:
-            ecg_features = float('nan') * np.ones(10) # 5 channels * 2 features / channel
+            ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
     else:
-        ecg_features = float('nan') * np.ones(10) # 5 channels * 2 features / channel
-
+        ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
+    print('ecgggggg', ecg_features.shape)
     # Extract features.
     hhh = np.hstack((patient_features, eeg_features, ecg_features))
-    print("features", hhh.shape)
+    print('feature',hhh.shape)
     return np.hstack((patient_features, eeg_features, ecg_features))
 
 # Extract patient features from the data.
@@ -328,7 +330,6 @@ def get_patient_features(data):
 # Extract features from the EEG data.
 def get_eeg_features(data, sampling_frequency):
     num_channels, num_samples = np.shape(data)
-    print(data.shape)
 
     #abc = pd.DataFrame(data)
     #abc.to_csv("/home/coding/sample_data")
@@ -350,14 +351,15 @@ def get_eeg_features(data, sampling_frequency):
         signal_sc = np.array(signal_sc)  # 计算偏斜度
 
         # 大致理解为平均值和方差值
-        #signal_data_get_feature = expand_feature(data)
-        #signal_data_get_feature = signal_data_get_feature.ravel()
+        signal_data_get_feature = expand_feature(data)
+        signal_data_get_feature = signal_data_get_feature.ravel()
         #print("expand", signal_data_get_feature.shape)
         delta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
         theta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
         alpha_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=8.0, fmax=12.0, verbose=False)
         beta_psd,  _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency, fmin=12.0, fmax=30.0, verbose=False)
 
+        #平均值和总和方差
         delta_psd_mean = np.nanmean(delta_psd, axis=1)
         theta_psd_mean = np.nanmean(theta_psd, axis=1)
         alpha_psd_mean = np.nanmean(alpha_psd, axis=1)
@@ -367,35 +369,68 @@ def get_eeg_features(data, sampling_frequency):
         theta_psd_sum = np.nansum(theta_psd, axis=1)
         alpha_psd_sum = np.nansum(alpha_psd, axis=1)
         beta_psd_sum = np.nansum(beta_psd, axis=1)
+
+        delta_psd_std = np.nanstd(delta_psd, axis=1)
+        theta_psd_std = np.nanstd(theta_psd, axis=1)
+        alpha_psd_std = np.nanstd(alpha_psd, axis=1)
+        beta_psd_std = np.nanstd(beta_psd, axis=1)
+
+
+        #计算能量占比
+        welch_full  = np.hstack((delta_psd, theta_psd, alpha_psd, beta_psd))
+        delta_occupy  = np.array(np.nansum(delta_psd) / np.nansum(welch_full))
+        theta_occupy = np.array(np.nansum(theta_psd) / np.nansum(welch_full))
+        alpha_occupy = np.array(np.nansum(alpha_psd) / np.nansum(welch_full))
+        beta_occupy = np.array(np.nansum(beta_psd) / np.nansum(welch_full))
+        #print(delta_occupy)
     else:
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
         delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
 
     #小波包分解
-    occupy = dwt(data,3)
+    WaveletPacket_feature = dwt(data,5)
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
-                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,occupy
-                          )).T
-    print("eeg features", features.shape)
+                          delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,
+                          delta_psd_std, theta_psd_std, alpha_psd_std, beta_psd_std,
+                          delta_occupy, theta_occupy, alpha_occupy, beta_occupy,
+                          WaveletPacket_feature, signal_data_get_feature)).T
+    #print("eeg features", features.shape)
     return features
 
 # Extract features from the ECG data.
 def get_ecg_features(data):
     num_channels, num_samples = np.shape(data)
-
-    if num_samples > 0:
+    if num_samples > 1024:
+        #时域特征平均值，方差
         mean = np.mean(data, axis=1)
+        ecg_dwt_list = []
+        psd_list =  []
         std  = np.std(data, axis=1)
-    elif num_samples == 1:
-        mean = np.mean(data, axis=1)
-        std  = float('nan') * np.ones(num_channels)
-    else:
-        mean = float('nan') * np.ones(num_channels)
-        std = float('nan') * np.ones(num_channels)
+        print(data.shape)
+        #时频特征
+        if data.shape[0] == 2:
+            for i in range(0, data.shape[0]):
+                data1 = data[i, :]
+                ecg_dwt_feature = ecg_dwt(data1, 5)
+                ecg_dwt_list.append(ecg_dwt_feature)
+                psd_feature = ecg_psd(data)
+                psd_list.append(psd_feature)
 
-    features = np.array((mean, std)).T
-    #print("ecg features", features.shape)
+        else :
+            psd_feature = ecg_psd(data)
+            psd_list.append(psd_feature)
+            ecg_dwt_feature = ecg_dwt(data, 5)
+            ecg_dwt_list.append(ecg_dwt_feature)
+
+        ecg_dwt_array = np.hstack(ecg_dwt_list)
+        psd_array = np.hstack(psd_list)
+        features = np.vstack((mean, std, ecg_dwt_array, psd_array))
+        features = features.T
+
+    else:
+        features = float('nan') * np.ones(50)
+
     return features
 
 def rfe(features, outcomes):
@@ -462,17 +497,80 @@ def expand_feature(data):
     return extracted_features_t.values
 
 def dwt(signal, n):
-   wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
-   re = []  # 第n层所有节点的分解系数
-   for i in [node.path for node in wp.get_level(n, 'freq')]:
-      re.append(wp[i].data)
-   # 第n层能量特征
-   energy = []
-   for i in re:
-      energy.append(pow(np.linalg.norm(i, ord=None), 2))
-   occury = energy[0] / sum(energy)
+    wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
+    re = []  # 第n层所有节点的分解系数
+    for i in [node.path for node in wp.get_level(n, 'freq')]:
+       re.append(wp[i].data)
+    # 第n层能量特征
+    energy = []
+    occupy_features = []
+    for i in re:
+       energy.append(pow(np.linalg.norm(i, ord=None), 2))
+    sum_num = sum(energy)
+    #计算每每个频段在总体占比，平均值，方差
+    mean = np.mean(re)
+    std = np.std(re)
+    for i in range(len(energy)):
+        occupy_features.append(energy[i] / sum_num)
 
-   return  occury
+
+    #小波分解计算熵特征等
+    #coeffs = pywt.wavedec(data = signal, wavelet='db3', level=5)
+    energy_cout = np.square(re)
+    energy_ratio = energy_cout / np.sum(energy_cout)
+    entropy = -np.sum(energy_ratio * np.log2(energy_ratio))
+    entropy = np.array(entropy)
+    #print("能量熵:", entropy)
+
+    # bagging_feature
+    energy = np.array(energy)
+    occupy_features = np.array(occupy_features)
+    features = np.hstack((energy, occupy_features, entropy, mean, std))
+    #print("小波特征", features.shape)
+
+    return  features
 
 
+def ecg_dwt(signal, n):
+    wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
+    re = []  # 第n层所有节点的分解系数
+    for i in [node.path for node in wp.get_level(n, 'freq')]:
+        re.append(wp[i].data)
+    # 第n层能量特征
+    energy = []
+    occupy_features = []
+    for i in re:
+        energy.append(pow(np.linalg.norm(i, ord=None), 2))
+    sum_num = sum(energy)
+    # 计算每每个频段在总体占比，平均值，方差
+    mean = np.mean(re)
+    #print('1',mean)
+    std = np.std(re)
+    occupy_features.append(energy[0] / sum_num)
+    #print('2',occupy_features)
+
+    # 小波分解计算熵特征等
+    # coeffs = pywt.wavedec(data = signal, wavelet='db3', level=5)
+    energy_cout = np.square(re)
+    energy_ratio = energy_cout / np.sum(energy_cout)
+    entropy = -np.sum(energy_ratio * np.log2(energy_ratio))
+    entropy = np.array(entropy)
+    #print("能量熵:", entropy)
+
+    features = np.vstack(( occupy_features, entropy, mean, std))
+    #print("小波特征", features.shape)
+
+    return features
+
+
+def ecg_psd(ecg_signal):
+    fs = 100
+    frequencies, psd = signal.welch(ecg_signal, fs=fs, window='hann', nperseg=1024, noverlap=512)
+    psd_mean = np.mean(psd)
+    psd_max = np.max(psd)
+    psd_std = np.std(psd)
+    psd_sum = np.sum(psd)
+
+    psd_feature = np.vstack((psd_mean, psd_std, psd_max, psd_sum))
+    return psd_feature
 
