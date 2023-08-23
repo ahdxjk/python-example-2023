@@ -259,7 +259,6 @@ def get_features(data_folder, patient_id):
 
             if all(channel in channels for channel in eeg_channels):
                 data, channels = reduce_channels(data, channels, eeg_channels)
-                data
                 data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
                 data = np.array([data[0, :] - data[2, :], data[2, :] - data[6, :], data[6,:] - data[10,:],data[ 10,:] - data[14,:]
                                 ,data[1,:] - data[3,:], data[3,:] - data[7,:], data[7,:] - data[11,:], data[11,:] - data[15,:]
@@ -274,7 +273,7 @@ def get_features(data_folder, patient_id):
             eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
     else:
         eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
-    print('eeeeeeg', eeg_features.shape)
+    #print('eeeeeeg', eeg_features.shape)
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
     group = 'ECG'
@@ -294,10 +293,10 @@ def get_features(data_folder, patient_id):
             ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
     else:
         ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
-    print('ecgggggg', ecg_features.shape)
+    #print('ecgggggg', ecg_features.shape)
     # Extract features.
     hhh = np.hstack((patient_features, eeg_features, ecg_features))
-    print('feature',hhh.shape)
+    #print('feature',hhh.shape)
     return np.hstack((patient_features, eeg_features, ecg_features))
 
 # Extract patient features from the data.
