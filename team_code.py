@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
-import numpy as np
+
 
 ################################################################################
 #
@@ -9,7 +9,7 @@ import numpy as np
 #
 ################################################################################
 
-
+import numpy as np
 from helper_code import *
 import tsfresh
 from scipy.signal import spectrogram
