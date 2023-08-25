@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
+import numpy as np
 
 ################################################################################
 #
@@ -8,15 +9,12 @@
 #
 ################################################################################
 
-from sklearn.impute import KNNImputer
+
 from helper_code import *
 import tsfresh
-from sklearn.datasets import make_hastie_10_2
+from scipy.signal import spectrogram
 from sklearn.ensemble import GradientBoostingClassifier, VotingClassifier
 from tsfresh.feature_extraction import extract_features, ComprehensiveFCParameters, settings
-from sklearn.feature_selection import RFE
-from sklearn.svm import SVR
-import numpy as np, os, sys
 from CCA_NEW import *
 from sklearn.decomposition import PCA
 import mne
@@ -26,11 +24,11 @@ warnings.filterwarnings('ignore')
 from sklearn.impute import SimpleImputer
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 import joblib
-from sklearn.linear_model import LogisticRegression
 from feature_selections_relifF import *
 import pandas as pd
 import  pywt
 from scipy import signal
+from scipy import integrate
 
 ################################################################################
 #
@@ -49,6 +47,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     if num_patients==0:
         raise FileNotFoundError('No data was provided.')
+
     # Create a folder for the model if it does not already exist.
     os.makedirs(model_folder, exist_ok=True)
 
@@ -264,7 +263,7 @@ def get_features(data_folder, patient_id):
                                 ,data[0,:] - data[4,:], data[4,:] - data[8,:], data[8,:] - data[12], data[12,:] - data[14 ,:]
                                 ,data[1,:] - data[5,:], data[5,:] - data[9,:], data[9,:] - data[13], data[13,:] - data[15 ,:]
                                 ,data[16,:] - data[17,:], data[17, :] - data[18,:]])
-                #data = data[ : , :320000]
+                #data = data[ : , :240000]
                 eeg_features = get_eeg_features(data, sampling_frequency).flatten()
             else:
                 eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
@@ -286,14 +285,14 @@ def get_features(data_folder, patient_id):
             data, channels = reduce_channels(data, channels, ecg_channels)
             data, sampling_frequency = preprocess_data(data, sampling_frequency, utility_frequency)
             if data.shape[1] < 1024 :
-                ecg_features = float('nan') * np.ones(50)
+                ecg_features = float('nan') * np.ones(95)
             else:
                 features = get_ecg_features(data)
                 ecg_features = expand_channels(features, channels, ecg_channels).flatten()
         else:
-            ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
+            ecg_features = float('nan') * np.ones(95) # 5 channels * 2 features / channel
     else:
-        ecg_features = float('nan') * np.ones(50) # 5 channels * 2 features / channel
+        ecg_features = float('nan') * np.ones(95) # 5 channels * 2 features / channel
     print('ecgggggg', ecg_features.shape)
     # Extract features.
     hhh = np.hstack((patient_features, eeg_features, ecg_features))
@@ -354,10 +353,23 @@ def get_eeg_features(data, sampling_frequency):
         signal_data_get_feature = expand_feature(data)
         signal_data_get_feature = signal_data_get_feature.ravel()
         #print("expand", signal_data_get_feature.shape)
-        delta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
-        theta_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
-        alpha_psd, _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=8.0, fmax=12.0, verbose=False)
-        beta_psd,  _ = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency, fmin=12.0, fmax=30.0, verbose=False)
+        delta_psd, delta_fre = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=0.5,  fmax=8.0, verbose=False)
+        theta_psd, theta_fre = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=4.0,  fmax=8.0, verbose=False)
+        alpha_psd, alpha_fre = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency,  fmin=8.0, fmax=12.0, verbose=False)
+        beta_psd,  beta_fre = mne.time_frequency.psd_array_welch(data, sfreq=sampling_frequency, fmin=12.0, fmax=30.0, verbose=False)
+
+        #计算能量
+        delta_energy = integrate.simps(delta_psd, delta_fre)
+        theta_energy = integrate.simps(theta_psd, theta_fre)
+        alpha_energy = integrate.simps(alpha_psd, alpha_fre)
+        beta_energy = integrate.simps(beta_psd, beta_fre)
+
+        #计算能量占比
+        energy_full  = np.hstack((delta_energy, theta_energy, alpha_energy, beta_energy))
+        delta_energy_occupy  = np.array(np.nansum(delta_energy) / np.nansum(energy_full))
+        theta_energy_occupy = np.array(np.nansum(theta_energy) / np.nansum(energy_full))
+        alpha_energy_occupy = np.array(np.nansum(alpha_energy) / np.nansum(energy_full))
+        beta_energy_occupy = np.array(np.nansum(beta_energy) / np.nansum(energy_full))
 
         #平均值和总和方差
         delta_psd_mean = np.nanmean(delta_psd, axis=1)
@@ -376,25 +388,31 @@ def get_eeg_features(data, sampling_frequency):
         beta_psd_std = np.nanstd(beta_psd, axis=1)
 
 
-        #计算能量占比
+        #计算频率占比
         welch_full  = np.hstack((delta_psd, theta_psd, alpha_psd, beta_psd))
         delta_occupy  = np.array(np.nansum(delta_psd) / np.nansum(welch_full))
         theta_occupy = np.array(np.nansum(theta_psd) / np.nansum(welch_full))
         alpha_occupy = np.array(np.nansum(alpha_psd) / np.nansum(welch_full))
         beta_occupy = np.array(np.nansum(beta_psd) / np.nansum(welch_full))
+
         #print(delta_occupy)
     else:
         delta_psd_mean = theta_psd_mean = alpha_psd_mean = beta_psd_mean = float('nan') * np.ones(num_channels)
         delta_psd_sum = theta_psd_sum = alpha_psd_sum = beta_psd_sum = float('nan') * np.ones(num_channels)
 
     #小波包分解
-    WaveletPacket_feature = dwt(data,5)
+    WaveletPacket_feature = eeg_dwt(data,5)
+    #短时傅里叶变换
+    stft_feature = eeg_stft(data)
+
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
                           delta_psd_sum, theta_psd_sum, alpha_psd_sum, beta_psd_sum,
                           delta_psd_std, theta_psd_std, alpha_psd_std, beta_psd_std,
                           delta_occupy, theta_occupy, alpha_occupy, beta_occupy,
-                          WaveletPacket_feature, signal_data_get_feature)).T
+                          delta_energy, theta_energy, alpha_energy, beta_energy,
+                          delta_energy_occupy, theta_energy_occupy, alpha_energy_occupy, beta_energy_occupy,
+                          WaveletPacket_feature, signal_data_get_feature, stft_feature)).T
     #print("eeg features", features.shape)
     return features
 
@@ -402,52 +420,61 @@ def get_eeg_features(data, sampling_frequency):
 def get_ecg_features(data):
     num_channels, num_samples = np.shape(data)
     if num_samples > 1024:
-        #时域特征平均值，方差
-        mean = np.mean(data, axis=1)
         ecg_dwt_list = []
         psd_list =  []
-        std  = np.std(data, axis=1)
-        print(data.shape)
+        stft_list = []
+        #时域特征平均值，方差
+        signal_mean = np.mean(data, axis=1)
+        signal_max = np.max(data, axis=1)
+        signal_min = np.min(data, axis=1)
+        signal_std  = np.std(data, axis=1)
+        signal_sc = []
         #时频特征
         if data.shape[0] == 2:
             for i in range(0, data.shape[0]):
                 data1 = data[i, :]
+                #偏斜度
+                data_single_mean = np.mean(data1)
+                data_single_std = np.std(1, ddof=1)
+                signal_sc.append(np.mean(((data1 - data_single_mean) / data_single_std) ** 3))
+                #dwt特征
                 ecg_dwt_feature = ecg_dwt(data1, 5)
                 ecg_dwt_list.append(ecg_dwt_feature)
-                psd_feature = ecg_psd(data)
+                #功率谱特征
+                psd_feature = ecg_psd(data1)
                 psd_list.append(psd_feature)
+                #stft特征
+                ecg_stft_feature = ecg_stft(data1)
+                stft_list.append(ecg_stft_feature)
 
         else :
             psd_feature = ecg_psd(data)
             psd_list.append(psd_feature)
+
             ecg_dwt_feature = ecg_dwt(data, 5)
             ecg_dwt_list.append(ecg_dwt_feature)
 
+            data_single_mean = np.mean(data)
+            data_single_std = np.std(1, ddof=1)
+            signal_sc.append(np.mean(((data - data_single_mean) / data_single_std) ** 3))
+
+            ecg_stft_feature = ecg_stft(data)
+            stft_list.append(ecg_stft_feature)
+
+        signal_sc_array = np.array(signal_sc)
+        stft_array = np.hstack(stft_list)
         ecg_dwt_array = np.hstack(ecg_dwt_list)
         psd_array = np.hstack(psd_list)
-        features = np.vstack((mean, std, ecg_dwt_array, psd_array))
+        features = np.vstack((signal_mean, signal_std, ecg_dwt_array, psd_array, signal_sc_array, signal_max, signal_min, stft_array))
         features = features.T
 
     else:
-        mean = float('nan') * np.ones(num_channels)
-        std = float('nan') * np.ones(num_channels)
+        signal_mean = float('nan') * np.ones(num_channels)
+        signal_std = float('nan') * np.ones(num_channels)
 
 
     return features
 
-def rfe(features, outcomes):
-    estimator = LogisticRegression()
-    selector = RFE(estimator, n_features_to_select=0.5, step=1)
-    #selector是经过rfe筛选过后的特征
-    selector = selector.fit_transform(features, outcomes)
-    return selector
-
-def reliefF(features, outcomes):
-    features = np.array(features)
-    outcomes = np.ravel(outcomes)
-    reliefF_classify = RelifF(10, 0.1, 5)
-    relief_features = reliefF_classify.fit_transform(features, outcomes)
-    return relief_features
 
 
 def bagging_outcome(outcome_model, CCA_model, features, full_features, gbc_outcome_model):
@@ -498,7 +525,7 @@ def expand_feature(data):
     #print(extracted_features_t)
     return extracted_features_t.values
 
-def dwt(signal, n):
+def eeg_dwt(signal, n):
     wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
     re = []  # 第n层所有节点的分解系数
     for i in [node.path for node in wp.get_level(n, 'freq')]:
@@ -510,8 +537,12 @@ def dwt(signal, n):
        energy.append(pow(np.linalg.norm(i, ord=None), 2))
     sum_num = sum(energy)
     #计算每每个频段在总体占比，平均值，方差
-    mean = np.mean(re)
-    std = np.std(re)
+    re_mean = np.nanmean(re)
+    re_std = np.nanstd(re)
+    re_max = np.nanmax(re)
+    re_min = np.nanmin(re)
+    re_sum = np.nansum(re)
+
     for i in range(len(energy)):
         occupy_features.append(energy[i] / sum_num)
 
@@ -527,12 +558,12 @@ def dwt(signal, n):
     # bagging_feature
     energy = np.array(energy)
     occupy_features = np.array(occupy_features)
-    features = np.hstack((energy, occupy_features, entropy, mean, std))
+    features = np.hstack((energy, occupy_features, entropy, re_mean, re_std, re_max, re_min, re_sum))
     #print("小波特征", features.shape)
 
     return  features
 
-
+#ecg信号的小波变换特征
 def ecg_dwt(signal, n):
     wp = pywt.WaveletPacket(data=signal, wavelet='db3', mode='symmetric', maxlevel=n)
     re = []  # 第n层所有节点的分解系数
@@ -564,7 +595,7 @@ def ecg_dwt(signal, n):
 
     return features
 
-
+#计算功率谱密度和能量特征
 def ecg_psd(ecg_signal):
     fs = 100
     frequencies, psd = signal.welch(ecg_signal, fs=fs, window='hann', nperseg=1024, noverlap=512)
@@ -572,7 +603,56 @@ def ecg_psd(ecg_signal):
     psd_max = np.max(psd)
     psd_std = np.std(psd)
     psd_sum = np.sum(psd)
+    psd_energy = integrate.simps(psd, frequencies)
 
-    psd_feature = np.vstack((psd_mean, psd_std, psd_max, psd_sum))
+    psd_feature = np.vstack((psd_mean, psd_std, psd_max, psd_sum, psd_energy))
     return psd_feature
 
+def eeg_stft(eeg_signal):
+    # 设置STFT参数
+    window_size = 256          # 窗口大小
+    overlap = 0.5              # 重叠比例
+    sampling_rate = 100        # 采样频率
+    # 计算STFT
+    frequencies, times, stft = spectrogram(eeg_signal, fs=sampling_rate, window='hann', nperseg=window_size, noverlap=int(window_size*overlap))
+    # 提取特征
+    #print(frequencies.shape)
+    mean_power = np.mean(np.nanmean(stft, axis=1), axis=1)          # 平均功率
+    max_power = np.max(np.nanmax(stft, axis=1), axis=1)            # 最大功率
+    total_power = np.sum(np.nansum(stft, axis=1), axis=1)
+    std_power =  np.std(np.nanstd(stft, axis=1), axis=1)      # 总功率
+    min_power = np.min(np.nanmin(stft, axis=1), axis=1)
+    peak_frequency = frequencies[np.nanargmax(stft, axis=0)]    # 峰值频率（每个时间点的最大功率对应的频率）
+    pca = PCA(n_components=1)
+    peak_frequency_array = np.ravel(pca.fit_transform(peak_frequency).T)
+    #print(peak_frequency_array.shape)
+
+    # 可以根据应用需求进行进一步的特征选择和处理
+
+    #返回特征
+    features = np.hstack((mean_power, max_power, total_power, std_power, min_power, peak_frequency_array))
+
+    return features
+
+
+def ecg_stft(ecg_signal):
+    # 设置STFT参数
+    window_size = 256          # 窗口大小
+    overlap = 0.5              # 重叠比例
+    sampling_rate = 100        # 采样频率
+    # 计算STFT
+    frequencies, times, stft = spectrogram(ecg_signal, fs=sampling_rate, window='hann', nperseg=window_size, noverlap=int(window_size*overlap))
+    # 提取特征
+    mean_power = np.mean(np.nanmean(stft))     # 平均功率
+    max_power = np.max(np.nanmax(stft))          # 最大功率
+    total_power = np.sum(np.nansum(stft))
+    std_power =  np.std(np.nanstd(stft))      # 总功率
+    min_power = np.min(np.nanmin(stft))
+    #peak_frequency = frequencies[np.nanargmax(stft, axis=0)]    # 峰值频率（每个时间点的最大功率对应的频率）
+
+    # 可以根据应用需求进行进一步的特征选择和处理
+
+    #返回特征
+    features = np.vstack((mean_power, max_power, total_power, std_power, min_power))
+
+    return features
