@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
-
+import numpy as np
 
 ################################################################################
 #
@@ -9,7 +9,7 @@
 #
 ################################################################################
 
-import numpy as np
+
 from helper_code import *
 import tsfresh
 from scipy.signal import spectrogram
@@ -76,7 +76,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
     features = np.vstack(features)
     outcomes = np.vstack(outcomes)
     cpcs = np.vstack(cpcs)
-
+    original_num_columns = features.shape[1]
     # Train the models.
     if verbose >= 1:
         print('Training the Challenge model on the Challenge data...')
@@ -87,11 +87,18 @@ def train_challenge_model(data_folder, model_folder, verbose):
     random_state   = 789  # Random state; set for reproducibility.
 
     # Impute any missing features; use the mean value by default.
-    imputer = SimpleImputer().fit(features)
+    imputer = SimpleImputer(missing_values=np.nan, strategy='mean').fit(features)
 
 
     # Train the models.
     features = imputer.transform(features)
+    if features.shape[1] != original_num_columns :
+        x = original_num_columns - features.shape[1]
+        for i in range(0, x):
+            connect = np.arange(0, features.shape[0])
+            features = np.column_stack((features, connect))
+
+
     #pycaret
     #csv1 = np.hstack((features, outcomes))
     #csv2 = np.hstack((features,cpcs))
@@ -159,16 +166,15 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     features = features.reshape(1, -1)
     #print("在运行阶段提取到的特征1为",features.shape)
     # Impute missing data.
-    #print(features.shape)
-    #print(full_features.shape)
+    features = imputer.transform(features)
+    print('featur_eshape', features.shape[1])
     if features.shape[1] != full_features.shape[1] :
         x = full_features.shape[1] - features.shape[1]
         for i in range(0, x):
             connect = np.arange(0, features.shape[0])
             features = np.column_stack((features, connect))
 
-    features = imputer.transform(features)
-    #print("在运行阶段提取到的特征2为",features.shape)
+    print("在运行阶段提取到的特征2为",features.shape)
 
     # Apply models to features.1
     outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features, gbc_outcome_model)#集成所有的outcome结果
@@ -266,11 +272,11 @@ def get_features(data_folder, patient_id):
                 #data = data[ : , :240000]
                 eeg_features = get_eeg_features(data, sampling_frequency).flatten()
             else:
-                eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+                eeg_features = float('nan') * np.ones(882) # 2 bipolar channels * 4 features / channel
         else:
-            eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+            eeg_features = float('nan') * np.ones(882) # 2 bipolar channels * 4 features / channel
     else:
-        eeg_features = float('nan') * np.ones(8) # 2 bipolar channels * 4 features / channel
+        eeg_features = float('nan') * np.ones(882) # 2 bipolar channels * 4 features / channel
     print('eeeeeeg', eeg_features.shape)
     # Extract ECG features.
     ecg_channels = ['ECG', 'ECGL', 'ECGR', 'ECG1', 'ECG2']
