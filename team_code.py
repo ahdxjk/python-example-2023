@@ -164,10 +164,9 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
     # Extract features.
     features = get_features(data_folder, patient_id)
     features = features.reshape(1, -1)
-    #print("在运行阶段提取到的特征1为",features.shape)
     # Impute missing data.
     features = imputer.transform(features)
-    print('featur_eshape', features.shape[1])
+    print('feature_shape', features.shape[1])
     if features.shape[1] != full_features.shape[1] :
         x = full_features.shape[1] - features.shape[1]
         for i in range(0, x):
@@ -410,6 +409,8 @@ def get_eeg_features(data, sampling_frequency):
     WaveletPacket_feature = eeg_dwt(data,5)
     #短时傅里叶变换
     stft_feature = eeg_stft(data)
+    #psd再计算
+    psd_feature = eeg_psd(data)
 
     features = np.hstack((signal_mean, signal_std, signal_max, signal_min, signal_sc,
                           signal_var,delta_psd_mean, theta_psd_mean, alpha_psd_mean, beta_psd_mean,
@@ -418,7 +419,7 @@ def get_eeg_features(data, sampling_frequency):
                           delta_occupy, theta_occupy, alpha_occupy, beta_occupy,
                           delta_energy, theta_energy, alpha_energy, beta_energy,
                           delta_energy_occupy, theta_energy_occupy, alpha_energy_occupy, beta_energy_occupy,
-                          WaveletPacket_feature, signal_data_get_feature, stft_feature)).T
+                          WaveletPacket_feature, signal_data_get_feature, stft_feature, psd_feature)).T
     #print("eeg features", features.shape)
     return features
 
@@ -600,6 +601,19 @@ def ecg_dwt(signal, n):
     #print("小波特征", features.shape)
 
     return features
+
+def eeg_psd(ecg_signal):
+    fs = 100
+    frequencies, psd = signal.welch(ecg_signal, fs=fs, window='hann', nperseg=1024, noverlap=512)
+    psd_mean = np.mean(psd)
+    psd_max = np.max(psd)
+    psd_std = np.std(psd)
+    psd_sum = np.sum(psd)
+    psd_energy = integrate.simps(psd, frequencies)
+
+    psd_feature = np.hstack((psd_mean, psd_std, psd_max, psd_sum, psd_energy))
+    return psd_feature
+
 
 #计算功率谱密度和能量特征
 def ecg_psd(ecg_signal):
