@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # Edit this script to add your team's code. Some functions are *required*, but you can edit most parts of the required functions,
 # change or remove non-required functions, and add your own functions.
-import numpy as np
+
 
 ################################################################################
 #
@@ -9,7 +9,7 @@ import numpy as np
 #
 ################################################################################
 
-
+import numpy as np
 from helper_code import *
 import tsfresh
 from scipy.signal import spectrogram
@@ -92,13 +92,7 @@ def train_challenge_model(data_folder, model_folder, verbose):
 
     # Train the models.
     features = imputer.transform(features)
-    if features.shape[1] != original_num_columns :
-        x = original_num_columns - features.shape[1]
-        for i in range(0, x):
-            connect = np.arange(0, features.shape[0])
-            features = np.column_stack((features, connect))
-
-
+    print('训练阶段提取的特征', features.shape)
     #pycaret
     #csv1 = np.hstack((features, outcomes))
     #csv2 = np.hstack((features,cpcs))
@@ -162,19 +156,12 @@ def run_challenge_models(models, data_folder, patient_id, verbose):
 
 
     # Extract features.
+    #print('full_fea',full_features.shape)
     features = get_features(data_folder, patient_id)
     features = features.reshape(1, -1)
     # Impute missing data.
     features = imputer.transform(features)
-    print('feature_shape', features.shape[1])
-    if features.shape[1] != full_features.shape[1] :
-        x = full_features.shape[1] - features.shape[1]
-        for i in range(0, x):
-            connect = np.arange(0, features.shape[0])
-            features = np.column_stack((features, connect))
-
-    print("在运行阶段提取到的特征2为",features.shape)
-
+    #print('运行阶段feature_shape', features.shape[1])
     # Apply models to features.1
     outcome = bagging_outcome(outcome_model, CCA_model_outcomes, features, full_features, gbc_outcome_model)#集成所有的outcome结果
 
@@ -490,9 +477,9 @@ def bagging_outcome(outcome_model, CCA_model, features, full_features, gbc_outco
     outcome1 = outcome_model.predict(features)[0]
     outcome2 = CCA_test(full_features, features, CCA_model)
     outcome3 = gbc_outcome_model.predict(features)
-    #print("随机森林结果",outcome1)
-    #print("CCA结果",outcome2)
-    #print("pbc结果", outcome3)
+    print("随机森林结果",outcome1)
+    print("CCA结果",outcome2)
+    print("pbc结果", outcome3)
     outcome_list.append(outcome1)
     outcome_list.append(outcome2)
     outcome_list.append(outcome3)
@@ -642,15 +629,12 @@ def eeg_stft(eeg_signal):
     total_power = np.sum(np.nansum(stft, axis=1), axis=1)
     std_power =  np.std(np.nanstd(stft, axis=1), axis=1)      # 总功率
     min_power = np.min(np.nanmin(stft, axis=1), axis=1)
-    peak_frequency = frequencies[np.nanargmax(stft, axis=0)]    # 峰值频率（每个时间点的最大功率对应的频率）
-    pca = PCA(n_components=1)
-    peak_frequency_array = np.ravel(pca.fit_transform(peak_frequency).T)
     #print(peak_frequency_array.shape)
 
     # 可以根据应用需求进行进一步的特征选择和处理
 
     #返回特征
-    features = np.hstack((mean_power, max_power, total_power, std_power, min_power, peak_frequency_array))
+    features = np.hstack((mean_power, max_power, total_power, std_power, min_power))
 
     return features
 
